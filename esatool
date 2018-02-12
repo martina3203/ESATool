@@ -437,13 +437,22 @@ fi
 
 stop_services(){
 # Check if the service is already stopped
-check_service puppet
-if [[ $? -eq 0 ]]; then
-  service puppet stop
-fi
-check_service rsa-esa
-if [[ $? -eq 0 ]]; then
-  service rsa-esa stop
+if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+  #If this is the ESA Server, restart ESA service
+    if [[ $ESA_EXISTS == true ]]; then
+      check_service rsa-nw-esa-analytics-server 1
+    else
+      check_service rsa-nw-respond-server 1
+    fi 
+else
+  check_service puppet
+  if [[ $? -eq 0 ]]; then
+    service puppet stop
+  fi
+  check_service rsa-esa
+  if [[ $? -eq 0 ]]; then
+    service rsa-esa stop
+  fi
 fi
 
 }
@@ -456,15 +465,24 @@ fi
 #######################################
 
 start_services(){
+if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+  #If this is the ESA Server, restart ESA service
+    if [[ $ESA_EXISTS == true ]]; then
+      check_service rsa-nw-esa-analytics-server 1
+    else
+      check_service rsa-nw-respond-server 1
+    fi 
+  else
+    check_service puppet
+    if [[ $? -eq 1 ]]; then
+      service puppet start
+    fi
+    check_service rsa-esa
+    if [[ $? -eq 1 ]]; then
+      service rsa-esa start
+    fi
+fi
 
-check_service puppet
-if [[ $? -eq 1 ]]; then
-  service puppet start
-fi
-check_service rsa-esa
-if [[ $? -eq 1 ]]; then
-  service rsa-esa start
-fi
 
 }
 
@@ -1144,112 +1162,119 @@ read -p "Press [Enter] to return to the Main Menu"
 
 Delete_Alerts_DateAndRule(){
 
-  echo -e "Do you want to count the alerts? Y/N (Recommended N if the database is huge)"
-  read -e USER_COMPLIANCE
-  case $USER_COMPLIANCE in
-    [yY][eE][sS]|[yY])
-      Count_All_Alerts
-    ;;
-    [nN])
-      echo -e "Aborting Count"
-    ;;
-    *)
-      echo -e "Aborting Count"
-    ;;
-  esac
-  echo -e "\nIntroduce the name of the rule to delete. Example:"
-  option_selected "\"rule to delete\" or ALLRULES for all alerts." "3"
-  option_selected "\"Please note that specific rules must be contained in quotation marks." "4"
-  read -e rule_delete
+echo -e "Do you want to count the alerts? Y/N (Recommended N if the database is huge)"
+read -e USER_COMPLIANCE
+case $USER_COMPLIANCE in
+  [yY][eE][sS]|[yY])
+    Count_All_Alerts
+  ;;
+  [nN])
+    echo -e "Aborting Count"
+  ;;
+  *)
+    echo -e "Aborting Count"
+  ;;
+esac
+echo -e "\nIntroduce the name of the rule to delete. Example:"
+echo -e "Please provide the rule you want to delete. It must be formatted with quotation marks"
+echo -e "EXAMPLES: "'"'"Rule 1"'"'" or "'"'"Multiple Login Attempts"'"'""
+echo -e "If you wish to delete ALL rules, please type ALLRULES . Do NOT include quotation marks in this case."
+read -e rule_delete
 
-  # Checking before the query(below) if ALLRULES IS SET
-  echo -e "TODAY is: $TODAY"
-  echo -e "From date YYYY-MM-DD (Default:$YESTERDAY). Please note this is the Starting date of your Range."
-  read -e from_date
-  from_date=${from_date:=$YESTERDAY}
+# Checking before the query(below) if ALLRULES IS SET
+echo -e "TODAY is: $TODAY"
+echo -e "From date YYYY-MM-DD (Default:$YESTERDAY). Please note this is the Starting date of your Range."
+read -e from_date
+from_date=${from_date:=$YESTERDAY}
+check_date $from_date
+until [ $? -eq 0 ]
+do
+  read -ep "PLEASE INTRODUCE A CORRECT DATE:" from_date
   check_date $from_date
-  until [ $? -eq 0 ]
-  do
-          read -ep "PLEASE INTRODUCE A CORRECT DATE:" from_date
-          check_date $from_date
-  done
+done
 
-  echo -e "From hour HH:MM:SS (Default:00:00:00)"
-  read -e from_hour
-  from_hour=${from_hour:=$DEFAULT_FROM_HOUR}
+echo -e "From hour HH:MM:SS (Default:00:00:00)"
+read -e from_hour
+from_hour=${from_hour:=$DEFAULT_FROM_HOUR}
 
+check_hour $from_hour
+until [ $? -eq 0 ]
+do
+  read -ep "PLEASE INTRODUCE A CORRECT HOUR:" from_hour
   check_hour $from_hour
-  until [ $? -eq 0 ]
-  do
-          read -ep "PLEASE INTRODUCE A CORRECT HOUR:" from_hour
-          check_hour $from_hour
-  done
+done
 
-  echo -e "To date YYYY-MM-DD (Default:$TODAY). Please note this is the Ending date of your Range."
-  read -e to_date
-  to_date=${to_date:=$TODAY}
+echo -e "To date YYYY-MM-DD (Default:$TODAY). Please note this is the Ending date of your Range."
+read -e to_date
+to_date=${to_date:=$TODAY}
 
+check_date $to_date
+until [ $? -eq 0 ]
+do
+  read -ep "PLEASE INTRODUCE A CORRECT DATE:" to_date
   check_date $to_date
-  until [ $? -eq 0 ]
-  do
-    read -ep "PLEASE INTRODUCE A CORRECT DATE:" to_date
-    check_date $to_date
-  done
+done
 
-  echo -e "To hour HH:MM:SS (Default:23:59:00)"
-  read -e to_hour
+echo -e "To hour HH:MM:SS (Default:23:59:00)"
+read -e to_hour
+to_hour=${to_hour:=$DEFAULT_TO_HOUR}
 
-  to_hour=${to_hour:=$DEFAULT_TO_HOUR}
+until [ $? -eq 0 ]
+do
+  read -ep "PLEASE INTRODUCE A CORRECT HOUR:" to_hour
+  check_date $to_hour
+done
+echo -e "***********************************************"
 
-  until [ $? -eq 0 ]
-  do
-    read -ep "PLEASE INTRODUCE A CORRECT HOUR:" to_hour
-    check_date $to_hour
-  done
-
-  echo -e "***********************************************"
-
-  if [[ $rule_delete == "ALLRULES" ]]; then
-    echo -e "ARE YOU SURE TO DELETE ALL ALERTS?"
-
-   else
-
-    echo -e "Are you sure to delete the alerts of the\nRULE:$rule_delete"
-  fi
-
-  if [[ $rule_delete == "ALLRULES" ]]; then
-    QUERY_ESA_RANGE="db.alert.remove({ \$and:
-    [{ time:{\$gte: ISODate(\"${from_date}T${from_hour}Z\")}},
-    { time: {\$lte: ISODate(\"${to_date}T${to_hour}Z\")}}]})"
-  else
-    QUERY_ESA_RANGE="db.alert.remove({ \$and:
-    [{ time:{\$gte: ISODate(\"${from_date}T${from_hour}Z\")}},
-    { time: {\$lte: ISODate(\"${to_date}T${to_hour}Z\")}},
-    {module_name: $rule_delete}]})"
-  fi
-if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
-  echo -e "FROM: $from_date - $from_hour \nTO: $to_date - $to_hour \n"
-
-  echo -e "\nCommand to be executed in mongodb:\n $QUERY_ESA_RANGE\n"
-  echo -e "\nConfirm? [Y/N]"
-  read -e option5_input
-  option5_input=${option5_input:="N"}
-  case $option5_input in
-    [yY][eE][sS]|[yY])
-      stop_services
-      echo -e "\nCommand executed in mongodb:\n $QUERY_ESA_RANGE\n"
-      echo "$QUERY_ESA_RANGE" | mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet
-      echo -e "Reindexing alert collection"
-      QUERY_ESA_REINDEX='db.alert.reIndex()'
-      echo -e "\nCommand executed in mongodb:\n $QUERY_ESA_REINDEX\n"
-      echo $QUERY_ESA_REINDEX | \
-      mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet
-      start_services
-      ;;
-    *)
-      ;;
-  esac
+if [[ $rule_delete == "ALLRULES" ]]; then
+  echo -e "ARE YOU SURE TO DELETE ALL ALERTS?"
+else
+  echo -e "Are you sure to delete the alerts of the\nRULE: $rule_delete"
 fi
+echo -e "FROM: $from_date - $from_hour \nTO: $to_date - $to_hour \n"
+
+echo -e "\nConfirm? [Y/N]"
+read -e USER_COMPLIANCE
+USER_COMPLIANCE=${USER_COMPLIANCE:="N"}
+case $USER_COMPLIANCE in
+  [yY][eE][sS]|[yY])
+  #Stop Services, delete entries, restart service
+    stop_services
+    if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+      if [[ $rule_delete == "ALLRULES" ]]; then
+        echo -e "Deleting ALL Rules. This may take some time..."
+        QUERY_ESA_RANGE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --eval 'db.getSiblingDB("'"$ESA_DATABASE"'").alert.deleteMany({ $and:
+        [{ receivedTime:{$gte: ISODate("'"${from_date}T${from_hour}Z"'")}},{ receivedTime: {$lte: ISODate("'"${to_date}T${to_hour}Z"'"")}}]})'`
+      else
+        QUERY_ESA_RANGE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --eval 'db.getSiblingDB("'"$ESA_DATABASE"'").alert.deleteMany({ $and:
+        [{ receivedTime:{$gte: ISODate("'"${from_date}T${from_hour}Z"'")}},{ receivedTime: {$lte: ISODate("'"${to_date}T${to_hour}Z"'"")}}],
+        {"'"originalHeaders.name"'": "'"$rule_delete"'"}})'`
+      fi
+
+    #10.6 deletions
+    else
+      if [[ $rule_delete == "ALLRULES" ]]; then
+        QUERY_ESA_RANGE="db.alert.remove({ \$and:
+        [{ time:{\$gte: ISODate(\"${from_date}T${from_hour}Z\")}},
+        { time: {\$lte: ISODate(\"${to_date}T${to_hour}Z\")}}]})"
+      else
+        QUERY_ESA_RANGE="db.alert.remove({ \$and:
+        [{ time:{\$gte: ISODate(\"${from_date}T${from_hour}Z\")}},
+        { time: {\$lte: ISODate(\"${to_date}T${to_hour}Z\")}},
+        {module_name: $rule_delete}]})"
+      fi
+        echo "$QUERY_ESA_RANGE" | mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet
+        echo -e "Reindexing alert collection"
+        QUERY_ESA_REINDEX='db.alert.reIndex()'
+        echo -e "\nCommand executed in mongodb:\n $QUERY_ESA_REINDEX\n"
+        echo $QUERY_ESA_REINDEX | \
+        mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet
+    fi
+    start_services
+    ;;
+  *)
+    ;;
+esac
 
 read -p "Press [Enter] to return to the Main Menu"
 
@@ -1553,7 +1578,6 @@ elif [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
           option_selected "Option 6 Selected: List Module IDs" "4";
           List_Module_ID
           show_menu $ESA_SERVER_VER;
-          ;;
           ;;
           7) clear;
           option_selected "Option 7 Selected: Delete ALL Alerts" "4";
