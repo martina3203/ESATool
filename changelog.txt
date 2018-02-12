@@ -1,0 +1,18 @@
+Version 3.0
+======================================================================
+Support/Development has been continued by Aaron Martin of RSA CS AMER Region
+Tested on 10.6.5.0 and 11.0.0.2
+
+There have been a great number of edits and revisions to make the script more efficient and more user friendly. I have also tried to make it more modular to allow it to scale with the changes in the platform.
+
+The Key Changes:
+
+	Added a "-p" parameter that allows for the prompt for username/password combinations.
+
+	The Precheck steps have been modified to fit into running in either a 11.0 or a 10.6 mode. I have not allowed for testing or usage in most parts in 10.5 or lower. If you need to work on an older version, please use the older version of this script.
+
+	Added additional messages to better describe what is happening when selecting certain options.
+
+	Edited existing messages to better describe what is happening when selecting certain options.
+
+	Removed certain options/functions that are no longer viable/available based on changes in the platform. If you feel that any of my changes are a mistake, please reach out to me and we can talk about it.
