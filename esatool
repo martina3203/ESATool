@@ -1,9 +1,10 @@
 #!/bin/bash
 #
 # SCRIPT: esatool
-# AUTHOR: Pablo Trigo
-# DATE: 17/06/2016
-# REV: 2.1 rev2
+# ORIGINAL AUTHOR: Pablo Trigo
+# AUTHOR: Aaron Martin
+# DATE: February 12, 2018
+# REV: 3.0
 #
 # PLATFORM: Linux Centos (Security Analytics 10.3, 10.4 ,10.5, 10.6) ESA APPLIANCE
 #
@@ -32,22 +33,69 @@
 #
 # GLOBAL VARIABLES
 
-ESA_SERVER_VER=`rpm -qa | grep rsa-esa-server | cut -d'-' -f4 | cut -d'.' -f2`
-ESA_CLIENT_VER=`rpm -qa | grep rsa-esa-client | cut -d'-' -f4 | cut -d'.' -f2`
-ESA_SERVER_EXACTVER=`rpm -qi rsa-esa-server | grep Version | awk '{print $3}'`
+#The following section checks through and sees what kind of server this is as 11.0 can have split ESA databases.
 
-echo -e "ESA_SERVER: $ESA_SERVER_VER"
+ESA_MAJOR_SERVER_VER=`rpm -qa | grep rsa-nw-esa-server | cut -d'-' -f5 | cut -d'.' -f1`
+ESA_EXISTS=true
+if [[ -z "$ESA_MAJOR_SERVER_VER" ]]; then
+  #Check to see if respond-server is installed in 11.0
+  ESA_MAJOR_SERVER_VER=`rpm -qa | grep rsa-nw-respond-server | cut -d '-' -f5 | cut -d '.' -f1`
+  ESA_EXISTS=false
+fi
+
+if [[ $ESA_MAJOR_SERVER_VER == "11" ]] ; then
+  ESA_SERVER_VER=`rpm -qa | grep rsa-nw-esa-server | cut -d'-' -f5 | cut -d'.' -f2`
+  ESA_CLIENT_VER=`rpm -qa | grep rsa-nw-esa-client | cut -d'-' -f5 | cut -d'.' -f2`
+  ESA_SERVER_EXACTVER=`rpm -qi rsa-nw-esa-server | grep Version | awk '{print $3}'`
+  #Default ESA user and password for 11.0
+  ESA_USER="deploy_admin"
+  ESA_PASSWORD="netwitness"
+  ESA_DATABASE="respond-server"
+else
+  ESA_MAJOR_SERVER_VER=`rpm -qa | grep rsa-esa-server | cut -d'-' -f4 | cut -d'.' -f1`
+  ESA_SERVER_VER=`rpm -qa | grep rsa-esa-server | cut -d'-' -f4 | cut -d'.' -f2`
+  ESA_CLIENT_VER=`rpm -qa | grep rsa-esa-client | cut -d'-' -f4 | cut -d'.' -f2`
+  ESA_SERVER_EXACTVER=`rpm -qi rsa-esa-server | grep Version | awk '{print $3}'` 
+  # Default ESA user and password for 10.6
+  ESA_USER="esa"
+  ESA_PASSWORD="esa"
+  ESA_EXISTS=true
+fi
+
+#If parameters are added, overwrite the default values
+if [[ $1 == "-p" ]]; then
+  echo -e "Please provide the user to login with."
+  if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+    echo -e "By default in 11.X, it's 'deploy_admin':"
+  else
+    echo -e "By default in 10.6, it's 'esa':"
+  fi
+  read -e ESA_USER
+
+  echo -e "Please provide the password to login with to your ESA database."
+  if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+    echo -e "By default in 11.X, it's your Deployment password:"
+  else
+    echo -e "By default in 10.6, it's 'esa':"
+  fi
+  read -e -s ESA_PASSWORD
+
+  #ESA in 11.0 has the potential for a custom database name.
+  if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+    echo -e "Please provide the name of the database to use for your ESA installation."
+    echo -e "Example: respond-server"
+    read -e ESA_DATABASE
+  fi
+fi
+
+MONGO_PORT="27017" 
+
 TODAY=`date +%Y-%m-%d`
 YESTERDAY=`date -d "-1 day" +"%Y-%m-%d"`
 DEFAULT_FROM_HOUR="00:00:00"
 DEFAULT_TO_HOUR="23:59:59"
 
-# Default ESA user and password
-ESA_USER="esa"
-ESA_PASSWORD="esa"
-MONGO_PORT="27017"
-
-# Default IM user and Password
+# Default IM user and Passwor
 IM_USER="im"
 IM_PASSWORD="im"
 
@@ -59,16 +107,12 @@ IFS=$(echo -en "\n\b")
 #
 # Version is 10.X
 minimal_check(){
-
-  if [[ $ESA_SERVER_VER == "3" ]] ||
-     [[ $ESA_SERVER_VER == "4" ]] ||
-     [[ $ESA_SERVER_VER == "5" ]] ||
-     [[ $ESA_SERVER_VER == "6" ]] ; then
+  if ([[ $ESA_MAJOR_SERVER_VER == 10 ]] && ([[ $ESA_SERVER_VER == 3 ]] || [[ $ESA_SERVER_VER == 4 ]] || [[ $ESA_SERVER_VER == 5 ]] ||
+     [[ $ESA_SERVER_VER == 6 ]])) || [[ $ESA_MAJOR_SERVER_VER == 11 ]] ; then
     echo -e "ESA VERSION DETECTED: $ESA_SERVER_EXACTVER"
-
   else
-    echo -e "ESA VERSION NOT DETECTED OR SUPPORTED $ESA_SERVER_EXACTVER..."
-    exit 1
+      echo -e "ESA VERSION NOT DETECTED OR SUPPORTED $ESA_SERVER_EXACTVER..."
+      exit 1
   fi
 }
 
@@ -149,26 +193,6 @@ check_ip() {
 }
 
 #######################################
-# Check index optimization in Mongodb
-# Globals: $ESA_USER
-#          $ESA_PASSWORD
-# Arguments: NONE
-# Returns: NONE
-#######################################
-
-check_index(){
-
-INDEX_NUMBER=`echo 'db.alert.getIndexes()' | mongo esa -u $ESA_USER \
--p $ESA_PASSWORD | grep -v "_id" | grep name | wc -l`
-
-if [[ $INDEX_NUMBER == "0" ]]; then
-        option_selected "Index optimization NOT FOUND please use option 13" "1"
-else
-        option_selected "OK" "2"
-fi
-}
-
-#######################################
 # Check if the PORT is reachable in the provided IP
 # Globals: NONE
 # Arguments: $1 PORT to check
@@ -202,61 +226,29 @@ fi
 
 database_size(){
 
-DATABASE_SIZE=`echo 'show collections' | mongo esa -u $ESA_USER \
--p $ESA_PASSWORD | grep alert`
+if [[ $ESA_MAJOR_SERVER_VER == 11 ]] ; then
+  ALERT_DATABASE_SIZE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD  --quiet --eval 'db.getSiblingDB('"'$ESA_DATABASE'"').alert.storageSize()'`
 
-if [[ -z "$DATABASE_SIZE" ]]; then
-        option_selected "No alert collection found" "1"
+  if [[ -z "$ALERT_DATABASE_SIZE" ]]; then
+    option_selected "Alert collection not found." "1"
+    option_selected "If you are trying to clear the Alert database and also on Netwitness L&P 11.0, the ESA Alert Database may not be on the ESA box." "3"
+    option_selected "You can check the settings of ESA database storage by going to Respond-Server Explore View and check under these nodes in the UI:" "3"
+    option_selected "1. data/application" "3"
+    option_selected "2. data/control" "3"
+  else
+    echo -e "Alert Database Size: $ALERT_DATABASE_SIZE" 
+  fi
 else
-        echo -e $DATABASE_SIZE
-fi
+  DATABASE_SIZE=`echo 'show collections' | mongo esa -u $ESA_USER -p $ESA_PASSWORD | grep alert`
 
-}
-
-#######################################
-# It shows the first alert in Mongodb
-# Globals: $ESA_USER
-#          $ESA_PASSWORD
-# Arguments: NONE
-# Returns: NONE
-#######################################
-
-first_alert(){
-
-FIRST_ALERT=`echo 'db.alert.find().sort({"time": 1}).limit(1).pretty()' | \
-mongo esa -u $ESA_USER -p $ESA_PASSWORD | \
-egrep '"time"|"module_name"'`
-
-if [ -z "$FIRST_ALERT" ];then
-        option_selected "No alert found" "1"
-else
-        echo -e "$FIRST_ALERT" | grep -vi "Long"
+  if [[ -z "$DATABASE_SIZE" ]]; then
+          option_selected "No alert collection found" "1"
+  else
+          echo -e $DATABASE_SIZE
+  fi
 fi
 }
 
-#######################################
-# It shows the last alert in Mongodb
-# Globals: $ESA_USER
-#          $ESA_PASSWORD
-# Arguments: NONE
-# Returns: NONE
-#######################################
-
-
-last_alert(){
-
-LAST_ALERT=`echo 'db.alert.find().sort({"time": -1}).limit(1).pretty()' | \
-mongo esa -u $ESA_USER -p $ESA_PASSWORD |\
-egrep '"time"|"module_name"'`
-
-if [[ -z "$LAST_ALERT" ]]; then
-        option_selected "No alert found" "1"
-else
-        echo -e "$LAST_ALERT" | grep -vi "Long"
-fi
-
-
-}
 
 #######################################
 # Mongodb path check
@@ -266,11 +258,14 @@ fi
 #######################################
 
 check_mongodbpath(){
-
-CHECK_MONGODBPATH=`egrep -i "^dbpath" /etc/tokumx.conf`
+if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+  CHECK_MONGODBPATH=`egrep -i "dbPath" /etc/mongod.conf`
+else
+  CHECK_MONGODBPATH=`egrep -i "^dbpath" /etc/tokumx.conf`
+fi
 
 if [[ -z "$CHECK_MONGODBPATH" ]]; then
-        option_selected "No mongodb path found in /etc/tokumx.conf" "1"
+        option_selected "No mongodb path found in Mongo/TokumX Config File" "1"
 else
         echo -e $CHECK_MONGODBPATH
 fi
@@ -336,6 +331,43 @@ do
 done
 
 }
+
+#######################################
+# Check core services
+# Globals: NONE
+# Arguments: NONE
+# Returns: NONE
+#######################################
+
+check_services(){
+
+  option_selected "                   SERVICES                  " "2"
+  option_selected "***************************************************" "1"
+
+  if [[ $ESA_MAJOR_SERVER_VER == "11" ]] ; then
+    #This may be a Respond Server and not an ESA
+    if [[ $ESA_EXISTS == true ]]; then
+      check_service rsa-nw-esa-analytics-server 1
+    else
+      check_service rsa-nw-respond-server 1
+    fi 
+    check_service rabbitmq-server 1
+    check_service sshd 1 
+    check_service mongod 1 
+    check_service collectd 1 
+  else
+    check_service rsa-esa 1 | tr -d '\n'
+    check_service rabbitmq-server 1 | tr -d '\n'
+    check_service sshd 1
+    check_service puppet 1 | tr -d '\n'
+    check_service ntpd 1 | tr -d '\n'
+    check_service tokumx 1 | tr -d '\n'
+    check_service collectd 1 | tr -d '\n'
+    check_service mcollective 1 
+  fi
+
+}
+
 #######################################
 # Check service status
 # Globals: NONE
@@ -346,7 +378,17 @@ done
 check_service(){
 
 CHECK_SERVICE_VERBOSE=$2
-SERVICE_STATUS=`service $1 status | grep -i "running"`
+
+#If we are dealing with 11.X
+if [[ $ESA_MAJOR_SERVER_VER == 11 ]] ; then
+  SERVICE_STATUS=`systemctl is-active $1 | grep -i "active"`
+  if [[ $SERVICE_STATUS == "inactive" ]] ; then
+    SERVICE_STATUS=""
+  fi
+#Else we are on 10.X
+else
+  SERVICE_STATUS=`service $1 status | grep -i "running"`
+fi
 if [[ -z $SERVICE_STATUS ]]; then
   if [[ $CHECK_SERVICE_VERBOSE == 1 ]]; then
     echo -e " $1 `print_nok`"
@@ -472,7 +514,6 @@ start_im(){
 # Returns: NONE
 #######################################
 
-
 check_ntp(){
 
   option_selected "***************************************************\n" "1"
@@ -481,28 +522,6 @@ check_ntp(){
   ntpq -p -n
   option_selected "Configured server/s in /etc/ntp.conf" "3"
   grep -i "server" /etc/ntp.conf | egrep -v "^#"
-}
-
-#######################################
-# Check core services
-# Globals: NONE
-# Arguments: NONE
-# Returns: NONE
-#######################################
-
-check_services(){
-
-  option_selected "                   SERVICES                  " "2"
-  option_selected "***************************************************" "1"
-  check_service rsa-esa 1 | tr -d '\n'
-  check_service rabbitmq-server 1 | tr -d '\n'
-  check_service sshd 1
-  check_service puppet 1 | tr -d '\n'
-  check_service ntpd 1 | tr -d '\n'
-  check_service tokumx 1 | tr -d '\n'
-  check_service collectd 1 | tr -d '\n'
-  check_service mcollective 1
-
 }
 
 #######################################
@@ -516,17 +535,23 @@ check_services(){
 #######################################
 check_credentials(){
 
+if [[ $ESA_MAJOR_SERVER_VER == 11 ]] ; then
+  ESA_TEST_CONN=`echo "" | mongo admin -u $ESA_USER -p $ESA_PASSWORD --quiet| wc -c`
+else
   ESA_TEST_CONN=`echo "" | mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet| wc -c`
   IM_TEST_CONN=`echo "" | mongo im -u $IM_USER -p $IM_PASSWORD --quiet| wc -c`
-
+fi
   if [[ "$ESA_TEST_CONN" != "0" ]]; then
     echo -e "Connection failed to tokumx in ESA, verify tokumx status and credentials"
-    echo -e "Credentials can be modified in /usr/bin/esatool"
-    echo -e 'ESA_USER="youruserifdifferent" and ESA_PASSWORD="yourpassword"'
+    echo -e "You can now pass credentials through the command line while running this command."
+    echo -e "Try: esatool -p"
+    if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+      echo -e "In a default 11.0 installation, the username is deploy_admin and the password you used during the deployment of 11.0"
+    fi
     exit 0
   fi
 
-  if [[ "$IM_TEST_CONN" != "0" ]]; then
+  if [[ "$IM_TEST_CONN" != "0" && $ESA_MAJOR_SERVER_VER != "11" ]]; then
     echo -e "Connection failed to tokumx in ESA, verify tokumx status and credentials"
     echo -e "Credentials can be modified in /usr/bin/esatool"
     echo -e 'IM_USER="youruserifdifferent" and IM_PASSWORD="yourpassword"'
@@ -658,11 +683,9 @@ health_check(){
 
   check_services
   option_selected "***************************************************" "1"
-  option_selected "Checking MONGODB Index optimization" "3"
-  check_index
   option_selected "Current MONGODB path" "3"
   check_mongodbpath
-  option_selected "Alert database size" "3"
+  option_selected "Database collection size(s)" "3"
   database_size
 }
 
@@ -695,56 +718,33 @@ option_selected "       / __// __// _ |/_  __// __ \ / __ \ / / " "4"
 option_selected "      / _/ _\ \ / __ | / /  / /_/ // /_/ // /__" "4"
 option_selected "     /___//___//_/ |_|/_/   \____/ \____//____/" "4"
 
-if [[ $1 -eq 4 ]]; then
-  option_selected "            RSA SECURITY (ESA $ESA_SERVER_EXACTVER) v2.1" "3"
-  option_selected "*****************************************************" "1"
-  echo -e "** 0) System Activity Report"
-  echo -e "** 1) Count all alerts sorted by rules "
-  echo -e "** 2) Count alerts in date range "
-  echo -e "** 3) Delete alerts associated to a rule "
-  echo -e "** 4) Delete License"
-  echo -e "** 5) Delete date range of alerts associated to a rule or all rules(COUNT optional)"
-  echo -e "** 6) Delete IM alerts and incidents (ALL) "
-  echo -e "** 7) Parse running rules in ESA "
-  echo -e "** 8) List module_id - rule name "
-  echo -e "** 9) Show Collections "
-  echo -e "** 10) DELETE ALL ALERTS (EXPERIMENTAL)"
-  echo -e "** 11) MAINTENANCE MODE (Disable all rules)"
-  echo -e "** 12) Index optimization ESA (x5 Speed)"
-
-elif [[ $1 -eq 5 ]]; then
-  option_selected "            RSA SECURITY (ESA $ESA_SERVER_EXACTVER) v2.1" "3"
+if [[ $ESA_SERVER_VER == 6 ]]; then
+  option_selected "            RSA SECURITY (ESA $ESA_SERVER_EXACTVER) v3.0" "3"
   option_selected "****************************************************" "1"
   echo -e "** 0) System Activity Report"
   echo -e "** 1) Count all alerts sorted by rules "
   echo -e "** 2) Count alerts in date range "
   echo -e "** 3) Delete alerts associated to a rule "
-  echo -e "** 4) Delete License"
-  echo -e "** 5) Delete date range of alerts associated to a rule or all rules(COUNT optional)"
-  echo -e "** 6) Delete IM alerts and incidents (ALL) "
-  echo -e "** 7) Parse running rules in ESA "
-  echo -e "** 8) List module_id - rule name "
-  echo -e "** 9) Show Collections "
-  echo -e "** 10) DELETE ALL ALERTS (EXPERIMENTAL)"
-  echo -e "** 11) MAINTENANCE MODE (Disable all rules)"
-  echo -e "** 12) Index optimization ESA (x5 Speed)"
-elif [[ $1 -eq 6 ]]; then
-  option_selected "            RSA SECURITY (ESA $ESA_SERVER_EXACTVER) v2.1" "3"
+  echo -e "** 4) Delete date range of alerts associated to a rule or all rules(COUNT optional)"
+  echo -e "** 5) Delete IM alerts and incidents (ALL) "
+  echo -e "** 6) Parse running rules in ESA "
+  echo -e "** 7) List module_id - rule name "
+  echo -e "** 8) DELETE ALL ALERTS"
+  echo -e "** 9) MAINTENANCE MODE (Disable all rules)"
+  echo -e "** 10) Index optimization ESA"
+elif [[ $ESA_MAJOR_SERVER_VER == 11 ]] ; then
+    option_selected "            RSA SECURITY (ESA $ESA_SERVER_EXACTVER) v3.0" "3"
   option_selected "****************************************************" "1"
   echo -e "** 0) System Activity Report"
   echo -e "** 1) Count all alerts sorted by rules "
   echo -e "** 2) Count alerts in date range "
   echo -e "** 3) Delete alerts associated to a rule "
-  echo -e "** 4) Delete License"
-  echo -e "** 5) Delete date range of alerts associated to a rule or all rules(COUNT optional)"
-  echo -e "** 6) Delete IM alerts and incidents (ALL) "
-  echo -e "** 7) Parse running rules in ESA "
-  echo -e "** 8) List module_id - rule name "
-  echo -e "** 9) Show Collections "
-  echo -e "** 10) DELETE ALL ALERTS (EXPERIMENTAL)"
-  echo -e "** 11) MAINTENANCE MODE (Disable all rules)"
-  echo -e "** 12) Index optimization ESA (x5 Speed)"
-
+  echo -e "** 4) Delete date range of alerts associated to a rule or all rules(COUNT optional)"
+  echo -e "** 5) Parse running rules in ESA "
+  echo -e "** 6) List module_id - rule name "
+  echo -e "** 7) DELETE ALL ALERTS"
+  echo -e "** 8) MAINTENANCE MODE (Disable all rules)"
+  echo -e "** 9) Index optimization ESA"
 else
   echo -e "FUTURE VERSION?"
 fi
@@ -784,7 +784,7 @@ case $precheck_input1 in
     echo -e "For more information contact with RSA support\n"
   exit 1
 
-  else
+  else 
 
   # Service checks
   check_services
@@ -794,129 +794,73 @@ case $precheck_input1 in
   check_kernels
   check_memory
 
-  precheck_test=""
-  echo $precheck_test
-    # Determine ESA version
-      # Versions 10.4, 10.5 use puppetmaster.local as SA SERVER IP
-      # SA SERVER IP CHECK START
-      SA_IP=`grep "puppetmaster.local" /etc/hosts | awk '{ print $1 }' | sort -u`
-      option_selected "\nCHECK SA SERVER IP" "2"
-      option_selected "******************" "3"
-      echo -e "Checking if SA server ip is correct in /etc/hosts\n"
+  if [[ $ESA_MAJOR_SERVER_VER != "11" ]] ; then
+    # Versions 10.4, 10.5, 10.6 use puppetmaster.local as SA SERVER IP
+    # SA SERVER IP CHECK START
+    SA_IP=`grep "puppetmaster.local" /etc/hosts | awk '{ print $1 }' | sort -u`
+    option_selected "\nCHECK SA SERVER IP" "2"
+    option_selected "******************" "3"
+    echo -e "Checking if SA server ip is correct in /etc/hosts\n"
 
+    check_ip $SA_IP
+    if [[ $? -eq 0 ]]; then
+      echo "SA SERVER IP ($SA_IP) `print_ok`"
+    else
+      precheck_test="N"
+      option_selected "SA server is NOK, please check /etc/hosts" "1"
+      option_selected "EXAMPLE:" "2"
+      option_selected "192.168.1.200 puppetmaster.local" "2"
+    fi
 
-  check_ip $SA_IP
-  if [[ $? -eq 0 ]]; then
-        echo "SA SERVER IP ($SA_IP) `print_ok`"
-  else
-        precheck_test = "N"
-        option_selected "SA server is NOK, please check /etc/hosts" "1"
-        option_selected "EXAMPLE:" "2"
-        option_selected "192.168.1.200 puppetmaster.local" "2"
-  fi
+    if [[ "$precheck_test" == "N" ]]; then
+      sa_ip_check="N"
+    else
+      read -ep "Is it correct? [Y/n]" sa_ip_check
+      sa_ip_check=${sa_ip_check:="Y"}
+    fi
 
-  if [[ "$precheck_test" == "N" ]]; then
-    sa_ip_check="N"
-  else
-    read -ep "Is it correct? [Y/n]" sa_ip_check
-    sa_ip_check=${sa_ip_check:="Y"}
-  fi
-
-  case $sa_ip_check in
-    [Nn])
-    echo -e "Introduce the SA Server IP:"
-    read -e sa_ip_check
-    check_ip $sa_ip_check
-    until [[ $? -eq 0 ]]
-     do
-      echo "Introduce the correct SA SERVER ip:"
+    case $sa_ip_check in
+      [Nn])
+      echo -e "Introduce the SA Server IP:"
       read -e sa_ip_check
       check_ip $sa_ip_check
-    done
-    echo -e "\n$sa_ip_check seems a correct ip `print_ok`"
-    SA_IP=$sa_ip_check
-    ;;
-  esac
-  check_event_time
-  check_nextgen
-  check_enablement
-
-  # SA IP SERVER CHECK END
-
-  # CHECK IF SA SERVER MONGO IS reachable
-  option_selected "\nCHECK SA SERVER TOKUMX(MONGODB)" "2"
-  option_selected "*******************************" "3"
-  port_chkcon 27017 $SA_IP
-  if [[ $? -eq 0 ]]; then
-   echo -e "\nTOKUMX(MONGODB) $SA_IP:$MONGO_PORT `option_selected "[OK]" "2"`"
-  else
-    echo -e "\nTOKUMX(MONGODB) $SA_IP:$MONGO_PORT `option_selected "[NOK]" "1"`"
-    ESA_IP=`ip addr |  grep "inet " \
-    | egrep "eth0|em1" | cut -d'/' -f1 | sed 's/   inet //g'`
-    option_selected "Don't panic!, this port is filtered by default,\
-  please confirm ESA ip:" "3"
-    option_selected "ESA IP detected($ESA_IP)" "2"
-    read -ep "Is it correct? [Y/n]" esa_ip_check
-    esa_ip_check=${esa_ip_check:="Y"}
-    case $esa_ip_check in
-    [Nn])
-      echo -e "Introduce the ESA Server IP:"
-      read -e esa_ip_check
-      check_ip $esa_ip_check
       until [[ $? -eq 0 ]]
-      do
-        echo "Introduce the ESA Server IP:"
-        read -e esa_ip_check
-        check_ip $esa_ip_check
+       do
+        echo "Introduce the correct SA SERVER ip:"
+        read -e sa_ip_check
+        check_ip $sa_ip_check
       done
-      echo -e "\n$esa_ip_check seems a correct ip `option_selected "[OK]" "2"`"
-      ESA_IP=$esa_ip_check
+      echo -e "\n$sa_ip_check seems a correct ip `print_ok`"
+      SA_IP=$sa_ip_check
       ;;
     esac
-  echo -e "\nIntroduce the password of SA server to\
-   open this port, esatool needs it:"
-    precheck_test="N"
+
+    check_event_time
+    check_nextgen
+
+    if [[ $ESA_SERVER_VER -ne "6" ]]; then
+      check_enablement
+    
+    ### EXTRA ENABLEMENT SECTION
+      NODE_ID=`cat /var/lib/puppet/node_id`
+      if [[ $NODE_ID == "" ]]; then
+        echo -e "NODE ID NOT DETECTED, check if /var/lib/puppet/node_id exists"
+      else
+        echo -e "NODE_ID: $NODE_ID"
+        echo -e "Check classes (base,esa)"
+        echo "db.nodes.find({\"node\":\"$NODE_ID\"}).forEach(printjson)" | mongo $SA_IP/puppet
+      fi
+
+    option_selected "\n***********************************************" "3"
+    fi
   fi
+fi
+    ;;
+    *)
+    # DO NOTHING
+    ;;
 
-  if [[ $precheck_test == "N" ]]; then
-
-   option_selected "\nExecuting:\nssh $SA_IP -l root iptables -I INPUT 1 -p tcp --dport 27017 -s $ESA_IP -m comment --comment \"ESATOOL\" -j ACCEPT" "2"
-    ssh $SA_IP -l root iptables -I INPUT 1 -p tcp --dport 27017 -s $ESA_IP -m comment --comment "ESATOOL" -j ACCEPT
-  fi
-  # Recheck of SA MONGODB PORT
-  port_chkcon 27017 $SA_IP > /dev/null 2>&1
-  if [[ $? -eq 1 ]]; then
-    option_selected "********************************************************" "3"
-    option_selected "\n\n$SA_IP:$MONGO_PORT still filtered after executing\
-   ssh remote command..." "1"
-    option_selected "Esatool from ESA needs to reach the mongodb \
-  port in SA (normally TCP 27017)" "1"
-    option_selected "Please open the TCP port $MONGO_PORT in SA or use esatool lite"
-    exit
-  fi
-
-  ### EXTRA ENABLEMENT SECTION
-
-  NODE_ID=`cat /var/lib/puppet/node_id`
-  if [[ $NODE_ID == "" ]]; then
-          echo -e "NODE ID NOT DETECTED, check if /var/lib/puppet/node_id exists"
-  else
-          echo -e "NODE_ID: $NODE_ID"
-          echo -e "Check classes (base,esa)"
-          echo "db.nodes.find({\"node\":\"$NODE_ID\"}).forEach(printjson)" | mongo $SA_IP/puppet
-  fi
-
-
-
-  option_selected "\n***********************************************" "3"
-  echo -e "\nAfter using esatool please restart iptables in SA SERVER:"
-  option_selected "service iptables restart" "3"
-  fi
-  ;;
-  *)
-  # DO NOTHING
-  ;;
-esac
+  esac
 read -p "Press [Enter] to continue"
 }
 
@@ -929,7 +873,7 @@ read -p "Press [Enter] to continue"
 # Returns: NONE
 #######################################
 
-esa_option0() {
+System_Activity_Report() {
 
 sar -A
 option_selected "********************************************************" "1"
@@ -946,9 +890,17 @@ read -p "Press [Enter] to return to the Main Menu"
 # Returns: NONE
 #######################################
 
-esa_option1() {
+Count_All_Alerts() {
 
-if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
+echo -e "Currently counting alerts in the collection. This may take a while..."
+if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+  COUNT_ALERTS=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --quiet --eval 'db.getSiblingDB('"'$ESA_DATABASE'"').alert.aggregate( \
+  {$group: { _id : "$originalHeaders.name" , count : {$sum : 1}}})' | \
+  egrep "id|count" | tr -d '\t' | cut -d '"' -f1,4,7 | sort -k 3` 
+  echo -e "Alert Name : Number of Occurences"
+  echo -e $COUNT_ALERTS | sed 's/} {/}\n{/g' | tr -d '{' | tr -d '}'
+
+elif [[ $ESA_MAJOR_SERVER_VER == 10 ]] && [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
 
   COUNT_ALERTS=`echo 'db.alert.aggregate([{ $group: { _id: "$module_name",\
   count: { $sum: 1 }}},{ $sort: { count: 1 } }])' | \
@@ -963,8 +915,7 @@ if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; t
   for alert_info in $(echo -e "$COUNT_ALERTS"); do
    ALERT_NAME=`echo -e $alert_info | cut -d':' -f1`
 
-   ALERT_MODULEID=`echo "db.alert.find({module_name:\"${ALERT_NAME}\"},\
-   {module_id: 1}).limit(1).pretty()" | \
+   ALERT_MODULEID=`echo "db.alert.find({module_name:\"${ALERT_NAME}\"}, {module_id: 1}).limit(1).pretty()" | \
    mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet | \
    grep module_id | cut -d':' -f2`
 
@@ -981,7 +932,7 @@ else
   echo -e "UNSUPPORTED VERSION!"
 fi
   #statements
-  read -p "Press [Enter] to return to the Main Menu"
+  read -p "Press [Enter] to continue..."
 
 }
 
@@ -994,13 +945,14 @@ fi
 # Returns: NONE
 #######################################
 
-esa_option2() {
+Count_Alerts_Daterange() {
 
-if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
+if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 || $ESA_MAJOR_SERVER_VER == 11 ]]; then
 
   echo -e "To return to the menu press enter until the end and answer N"
   echo -e "************************************************************"
-  echo -e "From date YYYY-MM-DD (Default:$YESTERDAY)"
+  echo -e "From date YYYY-MM-DD (Default:$YESTERDAY). Please note this is the Starting date of your Range."
+
   read -e from_date
   from_date=${from_date:=$YESTERDAY}
   check_date $from_date
@@ -1022,7 +974,7 @@ if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; t
     check_hour $from_hour
   done
 
-  echo -e "To date YYYY-MM-DD (Default:$TODAY)"
+  echo -e "To date YYYY-MM-DD (Default:$TODAY). Please note this is the Ending date in your Range."
   read -e to_date
   to_date=${to_date:=$TODAY}
 
@@ -1045,26 +997,32 @@ if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; t
           check_date $to_hour
   done
 
-  echo -e "Are you sure to query the alert count\nFROM: \
-  $from_date - $from_hour \nTO: $to_date - $to_hour \n[y/N]"
-  read -e option2_input
-  option2_input=${option2_input:="N"}
-  case $option2_input in
+  echo -e "Are you sure to query the alert count\nFROM: $from_date - $from_hour \nTO: $to_date - $to_hour \n[y/N]"
+  read -e USER_RESPONSE
+  USER_RESPONSE=${USER_RESPONSE:="N"}
+  case $USER_RESPONSE in
   [yY][eE][sS]|[yY])
-    QUERY_ESA_RANGE="db.alert.aggregate([{\$match : \
-    { time : { \$gt : ISODate(\"${from_date}T${from_hour}Z\"),\
-    \$lte : ISODate(\"${to_date}T${to_hour}Z\")}}},\
-    {\$group: { _id: \"\$module_name\", \
-    count: { \$sum: 1 }}},{ \$sort: { count: 1 } }]);"
-    echo -e "\nCommand executed in mongodb:\n"
-    echo -e "$QUERY_ESA_RANGE\n" | tr -d ' '
-    echo $QUERY_ESA_RANGE | \
-    mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet | \
-    grep "id" -A1
-              ;;
-          *)
 
-              ;;
+    if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+      QUERY_ESA_RANGE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --quiet --eval 'db.getSiblingDB('"'$ESA_DATABASE'"').alert.aggregate( \
+      [{$match :  {receivedTime : {$gt : ISODate('"'${from_date}T${from_hour}Z'"'),$lte : ISODate('"'${to_date}T${to_hour}Z'"')}}}, \
+      {$group: { _id : "$originalHeaders.name", count : {$sum : 1}}}])' | egrep "id|count" | tr -d '\t' | cut -d '"' -f1,4,7 | sort -k 3` 
+      echo -e "Alert Name : Number of Occurences"
+      echo -e $QUERY_ESA_RANGE | sed 's/} {/}\n{/g' | tr -d '{' | tr -d '}'
+    else
+      QUERY_ESA_RANGE="db.alert.aggregate([{\$match : \
+      { time : { \$gt : ISODate(\"${from_date}T${from_hour}Z\"),\
+      \$lte : ISODate(\"${to_date}T${to_hour}Z\")}}},\
+      {\$group: { _id: \"\$module_name\", \
+      count: { \$sum: 1 }}},{ \$sort: { count: 1 } }]);"
+      echo -e "\nCommand executed in mongodb:\n"
+      echo -e "$QUERY_ESA_RANGE\n" | tr -d ' '
+      echo $QUERY_ESA_RANGE | \
+      mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet | grep "id" -A1    
+    fi
+    ;;
+      *)
+                ;;
   esac
 
 elif [[ $ESA_SERVER_VER == 3 ]]; then
@@ -1083,109 +1041,93 @@ read -p "Press [Enter] to return to the Main Menu"
 # Arguments: NONE
 # Returns: NONE
 #######################################
-esa_option3(){
+Delete_Alerts_By_Rule(){
 
-if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
+if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4  || $ESA_MAJOR_SERVER_VER == 11 ]]; then
 
-  TOTAL_RULES=`echo 'db.alert.aggregate({$group : {_id : "$module_name"}
-   },{$group: {_id:1, count: {$sum : 1 }}})' | \
-   mongo esa -u $ESA_USER -p $ESA_PASSWORD | \
-   grep "result" | cut -d' ' -f11`
-
-  echo 'db.alert.aggregate([{ $group: { _id: "$module_name", count: { $sum: 1 }}},
-  { $sort: { count: 1 } }])' |\
-   mongo esa -p $ESA_PASSWORD -u $ESA_USER |\
-   grep "id" -A1 |  sed 's/_id/Rule/g'
-
-  RULES_LIST=`echo 'db.alert.aggregate([{ $group: { _id: "$module_name",
-  count: { $sum: 1 }}}, { $sort: { count: 1 } }])' | \
-  mongo esa -p $ESA_PASSWORD -u $ESA_USER | \
-  grep "_id" | cut -d':' -f2 | tr -d '",'`
-
-  echo -e "\n Introduce the name of the rule to delete:"
-  option_selected 'Example: "rule to delete",double quotes included' "3"
-  read -e option3_input
-  if [ ! -z $option3_input ]; then
-
-        echo -e "Are you sure to delete RULE:($option3_input) [y/N]"
-                read -e option3_input1
-                case $option3_input1 in
-                        [yY][eE][sS]|[yY])
-                                stop_services
-                                DELETE_MONGO="db.alert.remove({ module_name:${option3_input}})"
-                                echo -e "\nCommand executed in mongodb $DELETE_MONGO \n"
-                                echo -e "$DELETE_MONGO" | \
-          mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet
-
-          echo -e "Reindexing alert collection"
-
-          REINDEX_MONGO="db.alert.reIndex()"
-                                echo -e "\nCommand executed in mongodb $REINDEX_MONGO \n"
-
-          echo $REINDEX_MONGO | \
-          mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet \
-          > /dev/null 2>&1
-
-          start_services
-                        ;;
-                        *)
-
-                        ;;
+  echo -e "Do you want to count the alerts first? This may take a long time if your collection is huge. [Y/n]"
+  read -e USER_RESPONSE
+  case $USER_RESPONSE in 
+    [yY][eE][sS]|[yY])
+      Count_All_Alerts
+      ;;
+      *)
+      ;;
+  esac
+  #11.0 Deletion
+  if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+    echo -e "Please provide the rule you want to delete. It must be formatted with quotation marks"
+    echo -e "EXAMPLES: "'"'"Rule 1"'"'" or "'"'"Multiple Login Attempts"'"'""
+    read -e USER_RESPONSE
+    USER_RESPONSE=`echo $USER_RESPONSE | tr -d '"'`
+    if [[ ! -z $USER_RESPONSE ]]; then
+      echo -e "Are you sure you want to delete Rule:( $USER_RESPONSE ) [y/N]"
+      read -e USER_COMPLIANCE
+      case $USER_COMPLIANCE in 
+      [yY][eE][sS]|[yY])
+        #Run the delete process
+        ESA_RULE_DELETE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --eval 'db.getSiblingDB("'"$ESA_DATABASE"'").alert.deleteMany( \
+          {"'"originalHeaders.name"'": "'$USER_RESPONSE'"})'`
+        echo "Command executed."
+        echo -e $ESA_RULE_DELETE | sed 's/} {/}\n{/g' | tr -d '{' | tr -d '}'
+        ;;
+        *)
+        ;;
       esac
-  fi
+    fi
+  else
+    #10.6 Deletions
+    TOTAL_RULES=`echo 'db.alert.aggregate({$group : {_id : "$module_name"}
+     },{$group: {_id:1, count: {$sum : 1 }}})' | \
+     mongo esa -u $ESA_USER -p $ESA_PASSWORD | \
+     grep "result" | cut -d' ' -f11`
 
+    echo 'db.alert.aggregate([{ $group: { _id: "$module_name", count: { $sum: 1 }}},
+    { $sort: { count: 1 } }])' |\
+     mongo esa -p $ESA_PASSWORD -u $ESA_USER |\
+     grep "id" -A1 |  sed 's/_id/Rule/g'
+
+    RULES_LIST=`echo 'db.alert.aggregate([{ $group: { _id: "$module_name",
+    count: { $sum: 1 }}}, { $sort: { count: 1 } }])' | \
+    mongo esa -p $ESA_PASSWORD -u $ESA_USER | \
+    grep "_id" | cut -d':' -f2 | tr -d '",'`
+
+    echo -e "Please provide the rule you want to delete. It must be formatted with quotation marks"
+    echo -e "EXAMPLES: "'"'"Rule 1"'"'" or "'"'"Multiple Login Attempts"'"'""
+    read -e USER_RESPONSE
+    if [ ! -z $USER_RESPONSE ]; then
+
+          echo -e "Are you sure to delete RULE:($USER_RESPONSE) [y/N]"
+                  read -e USER_COMPLIANCE
+                  case $USER_COMPLIANCE in
+                          [yY][eE][sS]|[yY])
+                                  stop_services
+                                  DELETE_MONGO="db.alert.remove({ module_name:${USER_RESPONSE}})"
+                                  echo -e "\nCommand executed in mongodb $DELETE_MONGO \n"
+                                  echo -e "$DELETE_MONGO" | \
+            mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet
+
+            echo -e "Reindexing alert collection"
+
+            REINDEX_MONGO="db.alert.reIndex()"
+                                  echo -e "\nCommand executed in mongodb $REINDEX_MONGO \n"
+
+            echo $REINDEX_MONGO | \
+            mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet \
+            > /dev/null 2>&1
+
+            start_services
+                          ;;
+                          *)
+                          ;;
+        esac
+    fi
+  fi
 elif [[ $ESA_SERVER_VER == "3" ]]; then
     echo -e "SQL PARAMETERS HERE"
 else
     echo -e "UNSUPPORTED VERSION!"
 fi
-read -p "Press [Enter] to return to the Main Menu"
-
-}
-
-#######################################
-# Remove license
-# Globals: $SA_IP
-# Arguments: NONE
-# Returns: NONE
-#######################################
-
-esa_option4(){
-
-echo -e "This option will remove the license from ESA "
-
-read -e -p "Are you sure? [y/N]" option4_input
-  case $option4_input in
-  [yY][eE][sS]|[yY])
-   stop_services
-    echo -e "Removing legacy license\n"
-    rm -fr /tmp/esa_backup && mkdir -p /tmp/esa_backup
-    echo -e "Creating backup in /tmp/esa_backup..."
-    echo -e "Moving /opt/rsa/esa/trustedStorage /tmp/esa_backup"
-    echo -e "Moving /etc/netwitness/ng/nwmaster9.bin /tmp/esa_backup\n"
-    mv /opt/rsa/esa/trustedStorage /tmp/esa_backup
-    mv /etc/netwitness/ng/nwmaster9.bin /tmp/esa_backup
-    ESA_ENTITLEMENT_COUNT=`echo 'db.entitlement.count({deviceName:"ESA"})' | \
-    mongo sa --host $SA_IP --quiet`
-    if [[ $ESA_ENTITLEMENT_COUNT -eq 1 ]]; then
-      echo 'db.entitlement.find({deviceName: "ESA"}).pretty()' | mongo sa \
-      --host $SA_IP --quiet
-      ESA_ENTITLEMENT=`echo 'db.entitlement.find({deviceName: "ESA"}).pretty()' | \
-      mongo sa --host $SA_IP --quiet | \
-      grep "_id" | cut -d'(' -f2 | tr -d '"),'`
-      echo -e "db.entitlement.remove({_id:${ESA_ENTITLEMENT}})"
-    elif [[ $ESA_ENTITLEMENT_COUNT -eq 0 ]]; then
-      echo "NO ENTITLEMENTS FOUND!!!"
-      #statements
-    else
-      echo "Several entries found!"
-    fi
-    start_services
-            ;;
-        *)
-
-            ;;
-    esac
 read -p "Press [Enter] to return to the Main Menu"
 }
 
@@ -1200,43 +1142,29 @@ read -p "Press [Enter] to return to the Main Menu"
 # Returns: NONE
 #######################################
 
+Delete_Alerts_DateAndRule(){
 
-esa_option5(){
-
-database_size
-if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
-  echo -e "Do you want to count the alerts? (Recommended N if the database is huge)"
-  read -e esa_option5_count
-  case $esa_option5_count in
+  echo -e "Do you want to count the alerts? Y/N (Recommended N if the database is huge)"
+  read -e USER_COMPLIANCE
+  case $USER_COMPLIANCE in
     [yY][eE][sS]|[yY])
-      TOTAL_RULES=`echo 'db.alert.aggregate({$group : {_id : "$module_name"} },
-      {$group: {_id:1, count: {$sum : 1 }}})' |\
-      mongo esa -u $ESA_USER -p $ESA_PASSWORD | \
-      grep "result" | cut -d' ' -f11`
-
-      echo 'db.alert.aggregate([{ $group: { _id: "$module_name", count: { $sum: 1 }}},
-      { $sort: { count: 1 } }])' | \
-      mongo esa -p $ESA_PASSWORD -u $ESA_USER | \
-      grep "id" -A1 |  sed 's/_id/Rule/g'
-
-        ;;
+      Count_All_Alerts
+    ;;
     [nN])
       echo -e "Aborting Count"
-        ;;
+    ;;
     *)
       echo -e "Aborting Count"
-        ;;
+    ;;
   esac
-    #statements
-
   echo -e "\nIntroduce the name of the rule to delete. Example:"
-  option_selected "\"rule to delete\" or ALLRULES for all alerts" "3"
+  option_selected "\"rule to delete\" or ALLRULES for all alerts." "3"
+  option_selected "\"Please note that specific rules must be contained in quotation marks." "4"
   read -e rule_delete
 
   # Checking before the query(below) if ALLRULES IS SET
-
   echo -e "TODAY is: $TODAY"
-  echo -e "From date YYYY-MM-DD (Default:$YESTERDAY)"
+  echo -e "From date YYYY-MM-DD (Default:$YESTERDAY). Please note this is the Starting date of your Range."
   read -e from_date
   from_date=${from_date:=$YESTERDAY}
   check_date $from_date
@@ -1257,17 +1185,16 @@ if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; t
           check_hour $from_hour
   done
 
-  echo -e "To date YYYY-MM-DD (Default:$TODAY)"
+  echo -e "To date YYYY-MM-DD (Default:$TODAY). Please note this is the Ending date of your Range."
   read -e to_date
   to_date=${to_date:=$TODAY}
 
   check_date $to_date
   until [ $? -eq 0 ]
   do
-          read -ep "PLEASE INTRODUCE A CORRECT DATE:" to_date
-          check_date $to_date
+    read -ep "PLEASE INTRODUCE A CORRECT DATE:" to_date
+    check_date $to_date
   done
-
 
   echo -e "To hour HH:MM:SS (Default:23:59:00)"
   read -e to_hour
@@ -1276,8 +1203,8 @@ if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; t
 
   until [ $? -eq 0 ]
   do
-          read -ep "PLEASE INTRODUCE A CORRECT HOUR:" to_hour
-          check_date $to_hour
+    read -ep "PLEASE INTRODUCE A CORRECT HOUR:" to_hour
+    check_date $to_hour
   done
 
   echo -e "***********************************************"
@@ -1289,39 +1216,38 @@ if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; t
 
     echo -e "Are you sure to delete the alerts of the\nRULE:$rule_delete"
   fi
-  echo -e "FROM: $from_date - $from_hour \nTO: $to_date - $to_hour \n[y/N]"
+
+  if [[ $rule_delete == "ALLRULES" ]]; then
+    QUERY_ESA_RANGE="db.alert.remove({ \$and:
+    [{ time:{\$gte: ISODate(\"${from_date}T${from_hour}Z\")}},
+    { time: {\$lte: ISODate(\"${to_date}T${to_hour}Z\")}}]})"
+  else
+    QUERY_ESA_RANGE="db.alert.remove({ \$and:
+    [{ time:{\$gte: ISODate(\"${from_date}T${from_hour}Z\")}},
+    { time: {\$lte: ISODate(\"${to_date}T${to_hour}Z\")}},
+    {module_name: $rule_delete}]})"
+  fi
+if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
+  echo -e "FROM: $from_date - $from_hour \nTO: $to_date - $to_hour \n"
+
+  echo -e "\nCommand to be executed in mongodb:\n $QUERY_ESA_RANGE\n"
+  echo -e "\nConfirm? [Y/N]"
   read -e option5_input
   option5_input=${option5_input:="N"}
   case $option5_input in
-          [yY][eE][sS]|[yY])
-                stop_services
-                if [[ $rule_delete == "ALLRULES" ]]; then
-
-                        QUERY_ESA_RANGE="db.alert.remove({ \$and:
-        [{ time:{\$gte: ISODate(\"${from_date}T${from_hour}Z\")}},
-        { time: {\$lte: ISODate(\"${to_date}T${to_hour}Z\")}}]})"
-                else
-                        QUERY_ESA_RANGE="db.alert.remove({ \$and:
-        [{ time:{\$gte: ISODate(\"${from_date}T${from_hour}Z\")}},
-        { time: {\$lte: ISODate(\"${to_date}T${to_hour}Z\")}},
-        {module_name: $rule_delete}]})"
-                fi
+    [yY][eE][sS]|[yY])
+      stop_services
       echo -e "\nCommand executed in mongodb:\n $QUERY_ESA_RANGE\n"
-
       echo "$QUERY_ESA_RANGE" | mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet
-
       echo -e "Reindexing alert collection"
-                QUERY_ESA_REINDEX='db.alert.reIndex()'
-                echo -e "\nCommand executed in mongodb:\n $QUERY_ESA_REINDEX\n"
-
+      QUERY_ESA_REINDEX='db.alert.reIndex()'
+      echo -e "\nCommand executed in mongodb:\n $QUERY_ESA_REINDEX\n"
       echo $QUERY_ESA_REINDEX | \
       mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet
-
       start_services
-              ;;
-          *)
-
-              ;;
+      ;;
+    *)
+      ;;
   esac
 fi
 
@@ -1340,7 +1266,7 @@ read -p "Press [Enter] to return to the Main Menu"
 # Returns: NONE
 #######################################
 
-esa_option6(){
+Delete_Alerts_IM(){
 
 if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
 
@@ -1372,7 +1298,7 @@ read -p "Press [Enter] to return to the Main Menu"
 # Returns: NONE
 #######################################
 
-esa_option7(){
+Parse_Running_Rules(){
 if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
   EPL_ESA_FILE='/opt/rsa/esa/conf/eplModuleManager.json'
     if [[ -e $EPL_ESA_FILE ]]; then
@@ -1396,7 +1322,7 @@ fi
 # Returns: NONE
 #######################################
 
-esa_option8(){
+List_Module_ID(){
 if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
   for moduleid in $(echo 'db.alert.aggregate([{$group:{ _id :"$module_id"}}])'\
    | mongo esa -u $ESA_USER -p $ESA_PASSWORD | grep id |\
@@ -1411,31 +1337,6 @@ read -p "Press [Enter] to return to the Main Menu"
 }
 
 #######################################
-# Show collections in ESA and SA SERVER
-# Globals: $ESA_SERVER_VER
-#          $ESA_USER
-#          $ESA_PASSWORD
-#          $SA_IP
-# Arguments: NONE
-# Returns: NONE
-#######################################
-
-esa_option9(){
-if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
-  SA_IP=`grep "puppetmaster.local" /etc/hosts | cut -d' ' -f1`
-  QUERY_COLLECTIONS='show collections'
-  option_selected "Command executed in mongodb ESA:" "2"
-  echo -e "$QUERY_COLLECTIONS"
-  echo "$QUERY_COLLECTIONS" |\
-  mongo esa -p $ESA_PASSWORD -u $ESA_USER
-  option_selected "\nCommand executed in mongodb SA SERVER:" "2"
-  echo -e "$QUERY_COLLECTIONS"
-  echo "$QUERY_COLLECTIONS" | mongo sa --host $SA_IP
-fi
-read -p "Press [Enter] to return to the Main Menu"
-}
-
-#######################################
 # Delete all alerts
 # Globals: $ESA_SERVER_VER
 #          $ESA_USER
@@ -1444,7 +1345,7 @@ read -p "Press [Enter] to return to the Main Menu"
 # Returns: NONE
 #######################################
 
-esa_option10(){
+Delete_Alerts_All(){
 if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
   RANDOM_NUMBER=`shuf -i100000-1000000 -n1`
   echo -e "SECURITY NUMBER:$RANDOM_NUMBER"
@@ -1469,7 +1370,7 @@ fi
 # Returns: NONE
 #######################################
 
-esa_option11(){
+Maintenance_Mode(){
 
 if [[ $ESA_SERVER_VER == 4 ]]; then
  stop_services
@@ -1498,11 +1399,11 @@ fi
 # Returns: NONE
 #######################################
 
-esa_option12(){
+Index_Optimize(){
 
-if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
+if [[ $ESA_SERVER_VER == 6 ]]; then
   INDEX_QUERY='db.alert.ensureIndex({time:1}, {background:true})'
-  echo -e "Do you want to optimize alert collection index? [y/N]"
+  echo -e "Do you want to optimize the alert collection index? [y/N]"
   read -e option12_input
   option12_input=${option12_input:="N"}
   case $option12_input in
@@ -1529,105 +1430,159 @@ precheck_esatool $ESA_SERVER_VER
 clear
 show_menu $ESA_SERVER_VER
 
-if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
-      while [ opt != '' ]
-        do
-        if [[ $opt = "" ]]; then
-                exit;
-        else
-            case $opt in
-              0) clear;
-              option_selected "Option 0 Selected" "4";
-        esa_option0
-        show_menu $ESA_SERVER_VER;
-              ;;
-            1) clear;
-            option_selected "Option 1 Selected" "4";
-        esa_option1
-        show_menu $ESA_SERVER_VER;
-            ;;
+if [[ $ESA_SERVER_VER == 6 ]]; then
+  while [ opt != '' ]
+    do
+      if [[ $opt = "" ]]; then
+        exit;
+      else
+        case $opt in
+          0) clear;
+          option_selected "Option 0 Selected: System Activity Report" "4";
+          System_Activity_Report
+          show_menu $ESA_SERVER_VER;
+          ;;
+          1) clear;
+          option_selected "Option 1 Selected: Count All Alerts" "4";
+          Count_All_Alerts
+          show_menu $ESA_SERVER_VER;
+          ;;
 
-            2) clear;
-                option_selected "Option 2 Selected" "4";
-                esa_option2
-        show_menu $ESA_SERVER_VER;
-                ;;
+          2) clear;
+          option_selected "Option 2 Selected: Count Alerts by Date Range" "4";
+          Count_Alerts_Daterange
+          show_menu $ESA_SERVER_VER;
+          ;;
 
-            3) clear;
-                option_selected "Option 3 Selected" "4";
-                esa_option3
-        show_menu $ESA_SERVER_VER;
-                ;;
+          3) clear;
+          option_selected "Option 3 Selected: Delete Alerts by Rule" "4";
+          Delete_Alerts_By_Rule
+          show_menu $ESA_SERVER_VER;
+          ;;
 
-            4) clear;
-                option_selected "Option 4 Selected" "4";
-                        esa_option4
-                show_menu $ESA_SERVER_VER;
-                ;;
-            5) clear;
-                option_selected "Option 5 Selected" "4";
-                        esa_option5
-                show_menu $ESA_SERVER_VER;
-                ;;
-            6) clear;
-                option_selected "Option 6 Selected" "4";
-                        esa_option6
-                show_menu $ESA_SERVER_VER;
-                ;;
-            7) clear;
-                option_selected "Option 7 Selected" "4";
-                        esa_option7
-                show_menu $ESA_SERVER_VER;
-                ;;
+          4) clear;
+          option_selected "Option 4 Selected: Delete Alerts by Date Range and Rule" "4";
+          Delete_Alerts_DateAndRule
+          show_menu $ESA_SERVER_VER;
+          ;;
+          5) clear;
+          option_selected "Option 5 Selected: Delete Alerts and Incidents in IM" "4";
+          Delete_Alerts_IM
+          show_menu $ESA_SERVER_VER;
+          ;;
+          6) clear;
+          option_selected "Option 6 Selected: Parse Running Rules in ESA" "4";
+          Parse_Running_Rules
+          show_menu $ESA_SERVER_VER;
+          ;;
 
-            8) clear;
-                option_selected "Option 8 Selected" "4";
-                        esa_option8
-                show_menu $ESA_SERVER_VER;
-                ;;
-            9) clear;
-                option_selected "Option 9 Selected" "4";
-                        esa_option9
-                show_menu $ESA_SERVER_VER;
-                ;;
-            10) clear;
-                option_selected "Option 10 Selected" "4";
-                        esa_option10
-                show_menu $ESA_SERVER_VER;
-            ;;
-            11) clear;
-                option_selected "Option 11 Selected" "4";
-                        esa_option11
-                show_menu $ESA_SERVER_VER;
-            ;;
-            12) clear;
-                option_selected "Option 12 Selected" "4";
-                        esa_option12
-                show_menu $ESA_SERVER_VER;
-            ;;
-            13) clear;
-                option_selected "Option 13 Selected" "4";
-                        esa_option13
-                show_menu $ESA_SERVER_VER;
-            ;;
-            14) clear;
-                option_selected "Option 14 Selected" "4";
-                        esa_option14
-                show_menu $ESA_SERVER_VER;
-            ;;
-            x)exit;
-            ;;
+          7) clear;
+          option_selected "Option 7 Selected: List Module IDs" "4";
+          List_Module_ID
+          show_menu $ESA_SERVER_VER;
+          ;;
+          8) clear;
+          option_selected "Option 8 Selected: Delete ALL Alerts" "4";
+          Delete_Alerts_All
+          show_menu $ESA_SERVER_VER;
+          ;;
+          9) clear;
+          option_selected "Option 9 Selected: Maintenance Mode" "4";
+          Maintenance_Mode
+          show_menu $ESA_SERVER_VER;
+          ;;
+          10) clear;
+          option_selected "Option 10 Selected: Index Optimization" "4";
+          Index_Optimize
+          show_menu $ESA_SERVER_VER;
+          ;;
+          x)exit;
+          ;;
 
-            \n)exit;
-            ;;
+          \n)exit;
+          ;;
 
-            *)clear;
-            option_selected "Select an option from the menu";
-            show_menu $ESA_SERVER_VER;
-            ;;
+          *)clear;
+          option_selected "Select an option from the menu";
+          show_menu $ESA_SERVER_VER;
+          ;;
         esac
-        fi
-done
+      fi
+  done
+elif [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+  while [ opt != '' ]
+    do
+      if [[ $opt = "" ]]; then
+        exit;
+      else
+        case $opt in
+          0) clear;
+          option_selected "Option 0 Selected: System Activity Report" "4";
+          System_Activity_Report
+          show_menu $ESA_SERVER_VER;
+          ;;
+          1) clear;
+          option_selected "Option 1 Selected: Count All Alerts" "4";
+          Count_All_Alerts
+          show_menu $ESA_SERVER_VER;
+          ;;
+
+          2) clear;
+          option_selected "Option 2 Selected: Count Alerts by Date Range" "4";
+          Count_Alerts_Daterange
+          show_menu $ESA_SERVER_VER;
+          ;;
+
+          3) clear;
+          option_selected "Option 3 Selected: Count Alerts by Rule" "4";
+          Delete_Alerts_By_Rule
+          show_menu $ESA_SERVER_VER;
+          ;;
+
+          4) clear;
+          option_selected "Option 4 Selected: Delete Alerts by Date Range and Rule" "4";
+          Delete_Alerts_DateAndRule
+          show_menu $ESA_SERVER_VER;
+          ;;
+          5) clear;
+          option_selected "Option 5 Selected: Parse Running Rules in ESA" "4";
+          Parse_Running_Rules
+          show_menu $ESA_SERVER_VER;
+          ;;
+          6) clear;
+          option_selected "Option 6 Selected: List Module IDs" "4";
+          List_Module_ID
+          show_menu $ESA_SERVER_VER;
+          ;;
+          ;;
+          7) clear;
+          option_selected "Option 7 Selected: Delete ALL Alerts" "4";
+          Delete_Alerts_All
+          show_menu $ESA_SERVER_VER;
+          ;;
+          8) clear;
+          option_selected "Option 8 Selected: Maintenance Mode" "4";
+          Maintenance_Mode
+          show_menu $ESA_SERVER_VER;
+          ;;
+          9) clear;
+          option_selected "Option 9 Selected: Index Optimization" "4";
+          Index_Optimize
+          show_menu $ESA_SERVER_VER;
+          ;;
+          x)exit;
+          ;;
+
+          \n)exit;
+          ;;
+
+          *)clear;
+          option_selected "Select an option from the menu";
+          show_menu $ESA_SERVER_VER;
+          ;;
+        esac
+      fi
+  done
 else
   echo -e "UNSUPPORTED VERSION! Aborting..."
   exit 0
