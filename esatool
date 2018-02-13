@@ -440,9 +440,9 @@ stop_services(){
 if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
   #If this is the ESA Server, restart ESA service
     if [[ $ESA_EXISTS == true ]]; then
-      check_service rsa-nw-esa-analytics-server 1
+      systemctl stop rsa-nw-esa-analytics-server 
     else
-      check_service rsa-nw-respond-server 1
+      systemctl stop rsa-nw-respond-server 
     fi 
 else
   check_service puppet
@@ -468,9 +468,9 @@ start_services(){
 if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
   #If this is the ESA Server, restart ESA service
     if [[ $ESA_EXISTS == true ]]; then
-      check_service rsa-nw-esa-analytics-server 1
+      systemctl start rsa-nw-esa-analytics-server 
     else
-      check_service rsa-nw-respond-server 1
+      systemctl start rsa-nw-respond-server 
     fi 
   else
     check_service puppet
@@ -1169,10 +1169,10 @@ case $USER_COMPLIANCE in
     Count_All_Alerts
   ;;
   [nN])
-    echo -e "Aborting Count"
+    echo -e "Aborting Count..."
   ;;
   *)
-    echo -e "Aborting Count"
+    echo -e "Aborting Count..."
   ;;
 esac
 echo -e "\nIntroduce the name of the rule to delete. Example:"
@@ -1239,16 +1239,21 @@ USER_COMPLIANCE=${USER_COMPLIANCE:="N"}
 case $USER_COMPLIANCE in
   [yY][eE][sS]|[yY])
   #Stop Services, delete entries, restart service
+    echo -e "Stopping Services...."
     stop_services
     if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
+      rule_delete=`echo $rule_delete | tr -d '"'`
       if [[ $rule_delete == "ALLRULES" ]]; then
         echo -e "Deleting ALL Rules. This may take some time..."
         QUERY_ESA_RANGE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --eval 'db.getSiblingDB("'"$ESA_DATABASE"'").alert.deleteMany({ $and:
-        [{ receivedTime:{$gte: ISODate("'"${from_date}T${from_hour}Z"'")}},{ receivedTime: {$lte: ISODate("'"${to_date}T${to_hour}Z"'"")}}]})'`
+        [{ receivedTime:{$gte: ISODate("'"${from_date}T${from_hour}Z"'")}},
+        { receivedTime: {$lte: ISODate("'"${to_date}T${to_hour}Z"'")}}]})'`
+        echo -e $QUERY_ESA_RANGE
       else
-        QUERY_ESA_RANGE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --eval 'db.getSiblingDB("'"$ESA_DATABASE"'").alert.deleteMany({ $and:
-        [{ receivedTime:{$gte: ISODate("'"${from_date}T${from_hour}Z"'")}},{ receivedTime: {$lte: ISODate("'"${to_date}T${to_hour}Z"'"")}}],
-        {"'"originalHeaders.name"'": "'"$rule_delete"'"}})'`
+        QUERY_ESA_RANGE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --eval 'db.getSiblingDB("'"$ESA_DATABASE"'").alert.deleteMany({ $and: 
+        [{ receivedTime:{$gte: ISODate("'"${from_date}T${from_hour}Z"'")}},{ receivedTime: {$lte: ISODate("'"${to_date}T${to_hour}Z"'")}}, 
+        {"'"originalHeaders.name"'": "'"$rule_delete"'"}]})'`
+        echo -e $QUERY_ESA_RANGE 
       fi
 
     #10.6 deletions
@@ -1270,6 +1275,7 @@ case $USER_COMPLIANCE in
         echo $QUERY_ESA_REINDEX | \
         mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet
     fi
+    echo -e "Starting Services..."
     start_services
     ;;
   *)
@@ -1324,7 +1330,7 @@ read -p "Press [Enter] to return to the Main Menu"
 #######################################
 
 Parse_Running_Rules(){
-if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
+if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4  || $ESA_MAJOR_SERVER_VER == 11 ]]; then
   EPL_ESA_FILE='/opt/rsa/esa/conf/eplModuleManager.json'
     if [[ -e $EPL_ESA_FILE ]]; then
       sed -e 's/\\\\n/\n/g' -e 's/\\\\r//g' -e 's/\\\\t//g' -e 's/\\\"/\"/g' \
