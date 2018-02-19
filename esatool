@@ -228,11 +228,12 @@ database_size(){
 
 if [[ $ESA_MAJOR_SERVER_VER == 11 ]] ; then
   ALERT_DATABASE_SIZE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD  --quiet --eval 'db.getSiblingDB('"'$ESA_DATABASE'"').alert.storageSize()'`
+  ALERT_DATABASE_SIZE="~$(($ALERT_DATABASE_SIZE / 1048576)) Megabytes"
 
   if [[ -z "$ALERT_DATABASE_SIZE" ]]; then
     option_selected "Alert collection not found." "1"
     option_selected "If you are trying to clear the Alert database and also on Netwitness L&P 11.0, the ESA Alert Database may not be on the ESA box." "3"
-    option_selected "You can check the settings of ESA database storage by going to Respond-Server Explore View and check under these nodes in the UI:" "3"
+    option_selected "You can check the settings of ESA database storage by going to the Respond-Server Explore View and check under these nodes in the UI:" "3"
     option_selected "1. data/application" "3"
     option_selected "2. data/control" "3"
   else
@@ -283,9 +284,9 @@ check_date(){
  date_check=`date "+%Y-%m-%d" -d "$1"  > /dev/null 2>&1 ;echo $?`
  date_check2=`echo $1 | awk -F '-'  '{ print ($1 > 1900 && $1 < 2100 && $2 <= 12 && $2!="" && $3!="" && $3 <= 31) ? "0" : "1"}'`
  if [[ $date_check == "0" && $date_check2 == "0" ]];then
-        return 0
+  return 0
  else
-        return 1
+  return 1
  fi
 }
 
@@ -303,9 +304,9 @@ hour_check=`date "+%H:%M:%S" -d "$1" > /dev/null 2>&1; echo $?`
 hour_check2=`echo $1 | awk -F ':' '{ print ( $1 <= 23 && $2 <= 59 && $2!="" && $3!="" && $3 <= 59) ? "0" : "1"}'`
 
 if [[ $hour_check == "0" && $hour_check2 == "0" ]]; then
-        return 0
+  return 0
 else
-        return 1
+  return 1
 fi
 }
 
@@ -440,7 +441,8 @@ stop_services(){
 if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
   #If this is the ESA Server, restart ESA service
     if [[ $ESA_EXISTS == true ]]; then
-      systemctl stop rsa-nw-esa-analytics-server 
+      systemctl stop rsa-nw-esa-analytics-server
+      systemctl stop rsa-nw-esa-server
     else
       systemctl stop rsa-nw-respond-server 
     fi 
@@ -468,7 +470,8 @@ start_services(){
 if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
   #If this is the ESA Server, restart ESA service
     if [[ $ESA_EXISTS == true ]]; then
-      systemctl start rsa-nw-esa-analytics-server 
+      systemctl start rsa-nw-esa-analytics-server
+      systemctl start rsa-nw-esa-server 
     else
       systemctl start rsa-nw-respond-server 
     fi 
@@ -748,8 +751,7 @@ if [[ $ESA_SERVER_VER == 6 ]]; then
   echo -e "** 6) Parse running rules in ESA "
   echo -e "** 7) List module_id - rule name "
   echo -e "** 8) DELETE ALL ALERTS"
-  echo -e "** 9) MAINTENANCE MODE (Disable all rules)"
-  echo -e "** 10) Index optimization ESA"
+  echo -e "** 9) Index optimization ESA"
 elif [[ $ESA_MAJOR_SERVER_VER == 11 ]] ; then
     option_selected "            RSA SECURITY (ESA $ESA_SERVER_EXACTVER) v3.0" "3"
   option_selected "****************************************************" "1"
@@ -761,8 +763,7 @@ elif [[ $ESA_MAJOR_SERVER_VER == 11 ]] ; then
   echo -e "** 5) Parse running rules in ESA "
   echo -e "** 6) List module_id - rule name "
   echo -e "** 7) DELETE ALL ALERTS"
-  echo -e "** 8) MAINTENANCE MODE (Disable all rules)"
-  echo -e "** 9) Index optimization ESA"
+  echo -e "** 8) Index optimization ESA"
 else
   echo -e "FUTURE VERSION?"
 fi
@@ -877,9 +878,7 @@ fi
     *)
     # DO NOTHING
     ;;
-
   esac
-read -p "Press [Enter] to continue"
 }
 
 #######################################
@@ -1393,35 +1392,6 @@ fi
   }
 
 #######################################
-# Disable rules 10.4 / Delete in 10.5
-# Globals: $ESA_SERVER_VER
-#          $ESA_USER
-#          $ESA_PASSWORD
-# Arguments: NONE
-# Returns: NONE
-#######################################
-
-Maintenance_Mode(){
-
-if [[ $ESA_SERVER_VER == 4 ]]; then
- stop_services
- echo -e "All rules disabled in /opt/rsa/esa/conf/eplModuleManager.json"
- sed -i 's/\\\"enabled\\\": true/\\\"enabled\\\": false /g' \
-/opt/rsa/esa/conf/eplModuleManager.json
- start_services
-  read -p "Press [Enter] to return to the Main Menu"
-elif [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 ]]; then
-  echo -e "Stop esa (service rsa-esa stop)"
-  echo -e "Delete manually /opt/rsa/esa/conf/eplModuleManager.json"
-  echo -e "Start esa (service rsa-esa start)"
-  echo -e "Remove the rule/s in the syncronization that are making the system crash"
-  echo -e "Syncronize again"
-  echo -e "Check if the system is stable now"
-  read -p "Press [Enter] to return to the Main Menu"
-fi
-}
-
-#######################################
 # Enables Index optimization
 # Globals: $ESA_SERVER_VER
 #          $ESA_USER
@@ -1518,12 +1488,7 @@ if [[ $ESA_SERVER_VER == 6 ]]; then
           show_menu $ESA_SERVER_VER;
           ;;
           9) clear;
-          option_selected "Option 9 Selected: Maintenance Mode" "4";
-          Maintenance_Mode
-          show_menu $ESA_SERVER_VER;
-          ;;
-          10) clear;
-          option_selected "Option 10 Selected: Index Optimization" "4";
+          option_selected "Option 9 Selected: Index Optimization" "4";
           Index_Optimize
           show_menu $ESA_SERVER_VER;
           ;;
@@ -1591,12 +1556,7 @@ elif [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
           show_menu $ESA_SERVER_VER;
           ;;
           8) clear;
-          option_selected "Option 8 Selected: Maintenance Mode" "4";
-          Maintenance_Mode
-          show_menu $ESA_SERVER_VER;
-          ;;
-          9) clear;
-          option_selected "Option 9 Selected: Index Optimization" "4";
+          option_selected "Option 8 Selected: Index Optimization" "4";
           Index_Optimize
           show_menu $ESA_SERVER_VER;
           ;;
