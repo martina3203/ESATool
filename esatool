@@ -85,6 +85,10 @@ if [[ $1 == "-p" ]]; then
     echo -e "Please provide the name of the database to use for your ESA installation."
     echo -e "Example: respond-server"
     read -e ESA_DATABASE
+    #If the user presses enter with no spacing
+    if [[ -z ESA_DATABASE ]]; then
+      ESA_DATABASE="respond-server"
+    fi
   fi
 fi
 
@@ -350,6 +354,7 @@ check_services(){
     #This may be a Respond Server and not an ESA
     if [[ $ESA_EXISTS == true ]]; then
       check_service rsa-nw-esa-analytics-server 1
+      check_service rsa-nw-esa-server
     else
       check_service rsa-nw-respond-server 1
     fi 
@@ -438,7 +443,6 @@ fi
 #######################################
 
 stop_services(){
-# Check if the service is already stopped
 if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
   #If this is the ESA Server, restart ESA service
     if [[ $ESA_EXISTS == true ]]; then
@@ -447,6 +451,7 @@ if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
     else
       systemctl stop rsa-nw-respond-server 
     fi 
+#Must be 10.X
 else
   check_service puppet
   if [[ $? -eq 0 ]]; then
@@ -892,11 +897,7 @@ Count_All_Alerts() {
 
 echo -e "Currently counting alerts in the collection. This may take a while..."
 if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
-  COUNT_ALERTS=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --quiet --eval 'db.getSiblingDB('"'$ESA_DATABASE'"').alert.aggregate( \
-  {$group: { _id : "$originalHeaders.name" , count : {$sum : 1}}})' | \
-  egrep "id|count" | tr -d '\t' | cut -d '"' -f1,4,7 | sort -k 3` 
-  echo -e "Alert Name : Number of Occurences"
-  echo -e $COUNT_ALERTS | sed 's/} {/}\n{/g' | tr -d '{' | tr -d '}'
+  mongo admin -u $ESA_USER -p $ESA_PASSWORD --quiet --eval 'db.getSiblingDB('"'$ESA_DATABASE'"').alert.aggregate( {$group: { _id : "$originalHeaders.name" , count : {$sum : 1}}},{ $sort: {count:-1}}).toArray()' | egrep "id|count" | sed 's/,*$//g'
 
 elif [[ $ESA_MAJOR_SERVER_VER == 10 ]] && [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 ]]; then
 
@@ -1340,17 +1341,23 @@ read -p "Press [Enter] to return to the Main Menu"
 Delete_Alerts_All(){
   RANDOM_NUMBER=`shuf -i100000-1000000 -n1`
   echo -e "SECURITY NUMBER:$RANDOM_NUMBER"
+  echo -e "Please note that services will be stopped and restarted once this process is started."
   echo -e "Introduce the number above to DELETE ALL ALERTS:"
-  read -e option10_input
-  if [ "$option10_input" == "$RANDOM_NUMBER" ]; then
+  read -e USER_RESPONSE
+  if [ "$USER_RESPONSE" == "$RANDOM_NUMBER" ]; then
+    echo -e "Stopping Services...."
     stop_services
+    echo -e "Starting deletion...."
     if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
       DELETEALERTQUERY=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --eval 'db.getSiblingDB("'"$ESA_DATABASE"'").alert.drop()'`
+      echo "Deletion Complete."
     elif [[ $ESA_MAJOR_SERVER_VER == 10 ]]; then
       echo "db.alert.drop()" | mongo esa -u $ESA_USER -p $ESA_PASSWORD
+      echo "Deletion Complete."
     else
       echo "UNSUPPORTED VERSION! ABORTING!"
     fi
+    echo -e "Starting Services..."
     start_services
   fi
   read -p "Press [Enter] to return to the Main Menu"
