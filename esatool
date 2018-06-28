@@ -1001,11 +1001,8 @@ if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 || $E
   [yY][eE][sS]|[yY])
 
     if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
-      QUERY_ESA_RANGE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --quiet --eval 'db.getSiblingDB('"'$ESA_DATABASE'"').alert.aggregate( \
-      [{$match :  {receivedTime : {$gt : ISODate('"'${from_date}T${from_hour}Z'"'),$lte : ISODate('"'${to_date}T${to_hour}Z'"')}}}, \
-      {$group: { _id : "$originalHeaders.name", count : {$sum : 1}}}])' | egrep "id|count" | tr -d '\t' | cut -d '"' -f1,4,7 | sort -k 3` 
       echo -e "Alert Name : Number of Occurences"
-      echo -e $QUERY_ESA_RANGE | sed 's/} {/}\n{/g' | tr -d '{' | tr -d '}'
+      mongo admin -u $ESA_USER -p $ESA_PASSWORD --quiet --eval 'db.getSiblingDB('"'$ESA_DATABASE'"').alert.aggregate( [{$match :  {receivedTime : {$gt : ISODate('"'${from_date}T${from_hour}Z'"'),$lte : ISODate('"'${to_date}T${to_hour}Z'"')}}}, {$group: { _id : "$originalHeaders.name", count : {$sum : 1}}}]).toArray()' | egrep "id|count" | sed 's/,*$//g'
     else
       QUERY_ESA_RANGE="db.alert.aggregate([{\$match : \
       { time : { \$gt : ISODate(\"${from_date}T${from_hour}Z\"),\
