@@ -853,8 +853,6 @@ case $precheck_input1 in
         echo -e "NODE ID NOT DETECTED, check if /var/lib/puppet/node_id exists"
       else
         echo -e "NODE_ID: $NODE_ID"
-        echo -e "Check classes (base,esa)"
-        echo "db.nodes.find({\"node\":\"$NODE_ID\"}).forEach(printjson)" | mongo $SA_IP/puppet
       fi
 
     option_selected "\n***********************************************" "3"
