@@ -55,7 +55,7 @@ else
   ESA_MAJOR_SERVER_VER=`rpm -qa | grep rsa-esa-server | cut -d'-' -f4 | cut -d'.' -f1`
   ESA_SERVER_VER=`rpm -qa | grep rsa-esa-server | cut -d'-' -f4 | cut -d'.' -f2`
   ESA_CLIENT_VER=`rpm -qa | grep rsa-esa-client | cut -d'-' -f4 | cut -d'.' -f2`
-  ESA_SERVER_EXACTVER=`rpm -qi rsa-esa-server | grep Version | awk '{print $3}'` 
+  ESA_SERVER_EXACTVER=`rpm -qi rsa-esa-server | grep Version | awk '{print $3}'`
   # Default ESA user and password for 10.6
   ESA_USER="esa"
   ESA_PASSWORD="esa"
@@ -92,7 +92,7 @@ if [[ $1 == "-p" ]]; then
   fi
 fi
 
-MONGO_PORT="27017" 
+MONGO_PORT="27017"
 
 TODAY=`date +%Y-%m-%d`
 YESTERDAY=`date -d "-1 day" +"%Y-%m-%d"`
@@ -231,8 +231,8 @@ fi
 database_size(){
 
 if [[ $ESA_MAJOR_SERVER_VER == 11 ]] ; then
-  ALERT_DATABASE_SIZE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD  --quiet --eval 'db.getSiblingDB('"'$ESA_DATABASE'"').alert.storageSize()'`
-  MEGABYTE_SIZE=1048576
+  ALERT_DATABASE_SIZE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD  --quiet --eval 'db.getSiblingDB('"'$ESA_DATABASE'"').alert.storageSize()' | sed -e 's/NumberLong("\(.*\)")/\1/'`
+  MEGABYTE_SIZE=1000000
   ALERT_DATABASE_SIZE=$((ALERT_DATABASE_SIZE / MEGABYTE_SIZE))
 
   if [[ -z "$ALERT_DATABASE_SIZE" ]]; then
@@ -242,7 +242,7 @@ if [[ $ESA_MAJOR_SERVER_VER == 11 ]] ; then
     option_selected "1. data/application" "3"
     option_selected "2. data/control" "3"
   else
-    echo -e "Alert Database Size: $ALERT_DATABASE_SIZE Megabytes" 
+    echo -e "Alert Database Size: $ALERT_DATABASE_SIZE Megabytes"
   fi
 else
   DATABASE_SIZE=`echo 'show collections' | mongo esa -u $ESA_USER -p $ESA_PASSWORD | grep alert`
@@ -357,11 +357,11 @@ check_services(){
       check_service rsa-nw-esa-server
     else
       check_service rsa-nw-respond-server 1
-    fi 
+    fi
     check_service rabbitmq-server 1
-    check_service sshd 1 
-    check_service mongod 1 
-    check_service collectd 1 
+    check_service sshd 1
+    check_service mongod 1
+    check_service collectd 1
   else
     check_service rsa-esa 1 | tr -d '\n'
     check_service rabbitmq-server 1 | tr -d '\n'
@@ -370,7 +370,7 @@ check_services(){
     check_service ntpd 1 | tr -d '\n'
     check_service tokumx 1 | tr -d '\n'
     check_service collectd 1 | tr -d '\n'
-    check_service mcollective 1 
+    check_service mcollective 1
   fi
 
 }
@@ -449,8 +449,8 @@ if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
       systemctl stop rsa-nw-esa-analytics-server
       systemctl stop rsa-nw-esa-server
     else
-      systemctl stop rsa-nw-respond-server 
-    fi 
+      systemctl stop rsa-nw-respond-server
+    fi
 #Must be 10.X
 else
   check_service puppet
@@ -477,10 +477,10 @@ if [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
   #If this is the ESA Server, restart ESA service
     if [[ $ESA_EXISTS == true ]]; then
       systemctl start rsa-nw-esa-analytics-server
-      systemctl start rsa-nw-esa-server 
+      systemctl start rsa-nw-esa-server
     else
-      systemctl start rsa-nw-respond-server 
-    fi 
+      systemctl start rsa-nw-respond-server
+    fi
 else
     check_service puppet
     if [[ $? -eq 1 ]]; then
@@ -846,7 +846,7 @@ case $precheck_input1 in
     check_event_time
     check_nextgen
     check_enablement
-    
+
     ### EXTRA ENABLEMENT SECTION
       NODE_ID=`cat /var/lib/puppet/node_id`
       if [[ $NODE_ID == "" ]]; then
@@ -1008,7 +1008,7 @@ if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4 || $E
       {\$group: { _id: \"\$module_name\", \
       count: { \$sum: 1 }}},{ \$sort: { count: 1 } }]);"
       echo -e "$QUERY_ESA_RANGE\n" | tr -d ' '
-      echo $QUERY_ESA_RANGE | mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet | grep "id" -A1    
+      echo $QUERY_ESA_RANGE | mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet | grep "id" -A1
     fi
     ;;
       *)
@@ -1037,7 +1037,7 @@ if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4  || $
 
   echo -e "Do you want to count the alerts first? This may take a long time if your collection is huge. [Y/n]"
   read -e USER_RESPONSE
-  case $USER_RESPONSE in 
+  case $USER_RESPONSE in
     [yY][eE][sS]|[yY])
       Count_All_Alerts
       ;;
@@ -1053,7 +1053,7 @@ if [[ $ESA_SERVER_VER == 6 || $ESA_SERVER_VER == 5 || $ESA_SERVER_VER == 4  || $
     if [[ ! -z $USER_RESPONSE ]]; then
       echo -e "Are you sure you want to delete Rule:( $USER_RESPONSE ) [y/N]"
       read -e USER_COMPLIANCE
-      case $USER_COMPLIANCE in 
+      case $USER_COMPLIANCE in
       [yY][eE][sS]|[yY])
         #Run the delete process
         ESA_RULE_DELETE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --eval 'db.getSiblingDB("'"$ESA_DATABASE"'").alert.deleteMany( \
@@ -1212,10 +1212,10 @@ case $USER_COMPLIANCE in
         { receivedTime: {$lte: ISODate("'"${to_date}T${to_hour}Z"'")}}]})'`
         echo -e $QUERY_ESA_RANGE
       else
-        QUERY_ESA_RANGE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --eval 'db.getSiblingDB("'"$ESA_DATABASE"'").alert.deleteMany({ $and: 
-        [{ receivedTime:{$gte: ISODate("'"${from_date}T${from_hour}Z"'")}},{ receivedTime: {$lte: ISODate("'"${to_date}T${to_hour}Z"'")}}, 
+        QUERY_ESA_RANGE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --eval 'db.getSiblingDB("'"$ESA_DATABASE"'").alert.deleteMany({ $and:
+        [{ receivedTime:{$gte: ISODate("'"${from_date}T${from_hour}Z"'")}},{ receivedTime: {$lte: ISODate("'"${to_date}T${to_hour}Z"'")}},
         {"'"originalHeaders.name"'": "'"$rule_delete"'"}]})'`
-        echo -e $QUERY_ESA_RANGE 
+        echo -e $QUERY_ESA_RANGE
       fi
 
     #10.6 deletions
@@ -1403,7 +1403,7 @@ ReindexAlertDatabase(){
 #10.X Index
 if [[ $ESA_MAJOR_SERVER_VER == 10 ]]; then
   REINDEX_MONGO="db.alert.reIndex()"
-  echo $REINDEX_MONGO | mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet 
+  echo $REINDEX_MONGO | mongo esa -u $ESA_USER -p $ESA_PASSWORD --quiet
 elif [[ $ESA_MAJOR_SERVER_VER == 11 ]]; then
   REINDEX_MONGO=`mongo admin -u $ESA_USER -p $ESA_PASSWORD --eval 'db.getSiblingDB("'"$ESA_DATABASE"'").alert.reIndex()'`
 fi
@@ -1566,4 +1566,3 @@ else
   echo -e "UNSUPPORTED VERSION! Aborting..."
   exit 0
 fi
-
