@@ -3,10 +3,10 @@
 # SCRIPT: esatool
 # ORIGINAL AUTHOR: Pablo Trigo
 # AUTHOR: Aaron Martin
-# DATE: February 12, 2018
-# REV: 3.0
+# DATE: December 21st, 2018
+# REV: 3.2
 #
-# PLATFORM: Linux Centos (Security Analytics 10.3, 10.4 ,10.5, 10.6) ESA APPLIANCE
+# PLATFORM: Linux Centos 6/7 RSA ESA APPLIANCE
 #
 # PURPOSE: Troubleshooting tool for ESA
 # LICENSE: GNU Public License v2 (http://gnu.org/licenses/)
@@ -231,7 +231,7 @@ fi
 database_size(){
 
 if [[ $ESA_MAJOR_SERVER_VER == 11 ]] ; then
-  ALERT_DATABASE_SIZE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD  --quiet --eval 'db.getSiblingDB('"'$ESA_DATABASE'"').alert.storageSize()' | sed -e 's/NumberLong("\(.*\)")/\1/'`
+  ALERT_DATABASE_SIZE=`mongo admin -u $ESA_USER -p $ESA_PASSWORD  --quiet --eval 'db.getSiblingDB('"'$ESA_DATABASE'"').alert.dataSize()' | sed -e 's/NumberLong("\(.*\)")/\1/'`
   MEGABYTE_SIZE=1000000
   ALERT_DATABASE_SIZE=$((ALERT_DATABASE_SIZE / MEGABYTE_SIZE))
 
