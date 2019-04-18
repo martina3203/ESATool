@@ -3,8 +3,8 @@
 # SCRIPT: esatool
 # ORIGINAL AUTHOR: Pablo Trigo
 # AUTHOR: Aaron Martin
-# DATE: December 21st, 2018
-# REV: 3.2
+# DATE: January 10th, 2019
+# REV: 3.3
 #
 # PLATFORM: Linux Centos 6/7 RSA ESA APPLIANCE
 #
@@ -746,7 +746,7 @@ option_selected "      / _/ _\ \ / __ | / /  / /_/ // /_/ // /__" "4"
 option_selected "     /___//___//_/ |_|/_/   \____/ \____//____/" "4"
 
 if [[ $ESA_MAJOR_SERVER_VER == 10 && $ESA_SERVER_VER == 6 ]]; then
-  option_selected "            RSA SECURITY (ESA $ESA_SERVER_EXACTVER) v3.0" "3"
+  option_selected "            RSA SECURITY (ESA $ESA_SERVER_EXACTVER) v3.3" "3"
   option_selected "****************************************************" "1"
   echo -e "** 0) System Activity Report"
   echo -e "** 1) Count all alerts sorted by rules "
@@ -759,7 +759,7 @@ if [[ $ESA_MAJOR_SERVER_VER == 10 && $ESA_SERVER_VER == 6 ]]; then
   echo -e "** 7) DELETE ALL ALERTS"
   echo -e "** 8) Index optimization ESA"
 elif [[ $ESA_MAJOR_SERVER_VER == 11 ]] ; then
-    option_selected "            RSA SECURITY (ESA $ESA_SERVER_EXACTVER) v3.0" "3"
+    option_selected "            RSA SECURITY (ESA $ESA_SERVER_EXACTVER) v3.3" "3"
   option_selected "****************************************************" "1"
   echo -e "** 0) System Activity Report"
   echo -e "** 1) Count all alerts sorted by rules "
